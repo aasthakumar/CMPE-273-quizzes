@@ -1,38 +1,32 @@
 import zmq
 import time
-# ZeroMQ Context
+from threading import Thread
+from queue import Queue
 
 
-context = zmq.Context()
+def client_msg_receive(q):
+    context = zmq.Context()
+    sock = context.socket(zmq.REP)
+    sock.bind("tcp://127.0.0.1:5677")
+    while True:
+        message = str(sock.recv().decode())
+        sock.send_string("Echo: " + message)
+        q.put(message)
 
-# Define the socket using the "Context"
+def client_msg_broadcast(q):
+    context = zmq.Context()
+    sock = context.socket(zmq.PUB)
+    sock.bind("tcp://127.0.0.1:5678")
+    while True:
+        while q.qsize() != 0:
+            current_message = q.get()
+            sock.send_string(current_message)
+            q.task_done()
 
-sock_rec = context.socket(zmq.PULL)
-#sock_rec.setsockopt(zmq.SUBSCRIBE,b'')
-sock_rec.bind("tcp://127.0.0.1:5677")
+q = Queue(maxsize=0)
 
+input = (Thread(target=client_msg_receive, args=(q, )))
+input.start()
 
-
-sock = context.socket(zmq.PUB)
-sock.bind("tcp://127.0.0.1:5678")
-#message = sock_rec.recv()
-
-dic = {}
-while True:
-    try:
-        message = sock_rec.recv()
-        message = message.decode('utf-8')
-        print(message)
-        try:
-            key, value = message.split(">")
-            
-        except ValueError:
-            msg = "\nUser [" + str(message) + "] Connected to the chat server."
-        else:
-            msg = "\n" + key + ":" + value       
-        msg = msg.encode('utf-8')
-        sock.send(msg)
-    except zmq.ZMQError:
-        pass
-    time.sleep(0.5)
-    
+broadcast = (Thread(target=client_msg_broadcast, args=(q, )))
+broadcast.start()
